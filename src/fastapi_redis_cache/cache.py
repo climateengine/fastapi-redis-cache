@@ -5,6 +5,7 @@ from functools import partial, update_wrapper, wraps
 from http import HTTPStatus
 from typing import Union
 
+from asyncer import asyncify
 from fastapi import Response
 
 from fastapi_redis_cache.client import FastApiRedisCache
@@ -46,7 +47,7 @@ def cache(*, expire: Union[int, timedelta] = ONE_YEAR_IN_SECONDS, fastapi_route:
                 # if the redis client is not connected or request is not cacheable, no caching behavior is performed.
                 return await get_api_response_async(func, *args, **kwargs)
             key = redis_cache.get_cache_key(func, *args, **kwargs)
-            ttl, in_cache = redis_cache.check_cache(key)
+            ttl, in_cache = await asyncify(redis_cache.check_cache)(key)
             if in_cache:
                 redis_cache.set_response_headers(response, True, deserialize_json(in_cache), ttl)
                 if redis_cache.requested_resource_not_modified(request, in_cache):
@@ -68,7 +69,7 @@ def cache(*, expire: Union[int, timedelta] = ONE_YEAR_IN_SECONDS, fastapi_route:
                 )
             response_data = await get_api_response_async(func, *args, **kwargs)
             ttl = calculate_ttl(expire)
-            cached = redis_cache.add_to_cache(key, response_data, ttl)
+            cached = await asyncify(redis_cache.add_to_cache)(key, response_data, ttl)
             if cached:
                 redis_cache.set_response_headers(response, cache_hit=False, response_data=response_data, ttl=ttl)
                 return (
@@ -92,13 +93,13 @@ def cache(*, expire: Union[int, timedelta] = ONE_YEAR_IN_SECONDS, fastapi_route:
                 # if the redis client is not connected or request is not cacheable, no caching behavior is performed.
                 return await func(*args, **kwargs)
             key = redis_cache.get_cache_key(func, *args, **kwargs)
-            ttl, in_cache = redis_cache.check_cache(key)
+            ttl, in_cache = await asyncify(redis_cache.check_cache)(key)
             if in_cache:
                 return deserialize_json(in_cache)
 
             response_data = await func(*args, **kwargs)
             ttl = calculate_ttl(expire)
-            redis_cache.add_to_cache(key, response_data, ttl)
+            await asyncify(redis_cache.add_to_cache)(key, response_data, ttl)
             return response_data
 
         @wraps(func)
@@ -132,7 +133,9 @@ def cache(*, expire: Union[int, timedelta] = ONE_YEAR_IN_SECONDS, fastapi_route:
 
 async def get_api_response_async(func, *args, **kwargs):
     """Helper function that allows decorator to work with both async and non-async functions."""
-    return await func(*args, **kwargs) if asyncio.iscoroutinefunction(func) else func(*args, **kwargs)
+    if not asyncio.iscoroutinefunction(func):
+        func = asyncify(func)
+    return await func(*args, **kwargs)
 
 
 def calculate_ttl(expire: Union[int, timedelta]) -> int:
