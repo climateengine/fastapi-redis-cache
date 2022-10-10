@@ -41,7 +41,10 @@ jobs:
 #      - trunk-check
       - run:
           name: Merge requirements
-          command: cat requirements.txt requirements-dev.txt > requirements-merged.txt
+          command: |
+              cat requirements.txt requirements-dev.txt > requirements-merged.txt
+              echo twine >> requirements-merged.txt
+              echo keyrings.google-artifactregistry-auth >> requirements-merged.txt
       - python/install-packages:
           pkg-manager: pip
           pip-dependency-file: requirements-merged.txt
