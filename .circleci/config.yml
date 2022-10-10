@@ -1,0 +1,79 @@
+version: 2.1
+
+orbs:
+  python: circleci/python@2.0.3
+  gcp-cli: circleci/gcp-cli@2.4.0
+
+parameters:
+  google-project-id:
+    type: string
+    default: "ce-builder"
+  ar-repo-name:
+    type: string
+    default: "python"
+  ar-repo-region:
+    type: string
+    default: "us"
+
+commands:
+  trunk-check:
+    steps:
+      - restore_cache:
+          key: v1-trunk-check-{{ checksum ".trunk/trunk.yaml" }}
+      - run:
+          name: trunk check
+          command: tools/trunk check --ci
+      - save_cache:
+          key: v1-trunk-check-{{ checksum ".trunk/trunk.yaml" }}
+          paths:
+            - "~/.cache/trunk"
+
+jobs:
+  build-test-and-publish:
+    docker:
+      - image: cimg/python:3.8
+    environment:
+      GOOGLE_PROJECT_ID: << pipeline.parameters.google-project-id >>
+      AR_REPO_NAME: << pipeline.parameters.ar-repo-name >>
+      AR_REPO_REGION: << pipeline.parameters.ar-repo-region >>
+    steps:
+      - checkout
+#      - trunk-check
+      - run:
+          name: Merge requirements
+          command: cat requirements.txt requirements-dev.txt > requirements-merged.txt
+      - python/install-packages:
+          pkg-manager: pip
+          pip-dependency-file: requirements-merged.txt
+      - run:
+          name: Install package for tests
+          command: pip install .
+      - run:
+          name: Run tests
+          command: |
+            mkdir test-results
+            pytest --junitxml=test-results/junit.xml
+      - store_test_results:
+          path: test-results
+      - run:
+          name: Build package
+          # command: python -m build
+          command: python setup.py sdist bdist_wheel
+      - gcp-cli/install:
+          version: 382.0.0
+      - gcp-cli/initialize
+      - run:
+          name: Upload package to AR
+          command: >-
+            twine upload
+            --repository-url "https://$AR_REPO_REGION-python.pkg.dev/$GOOGLE_PROJECT_ID/$AR_REPO_NAME/"
+            --skip-existing
+            dist/*
+
+workflows:
+  build-and-publish:
+    jobs:
+      - build-test-and-publish:
+          filters:
+            tags:
+              only: /((v\d+(\.\d+){0,2}[^\+]*)|(0.0))(\+.*)?/

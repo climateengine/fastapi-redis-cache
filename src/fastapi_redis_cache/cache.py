@@ -87,7 +87,6 @@ def cache(*, expire: Union[int, timedelta] = ONE_YEAR_IN_SECONDS, fastapi_route:
         async def inner_wrapper_async(*args, **kwargs):
             """Return cached value if one exists, otherwise evaluate the wrapped function and cache the result."""
 
-            func_kwargs = kwargs.copy()
             redis_cache = FastApiRedisCache()
             if redis_cache.not_connected:
                 # if the redis client is not connected or request is not cacheable, no caching behavior is performed.
@@ -106,7 +105,6 @@ def cache(*, expire: Union[int, timedelta] = ONE_YEAR_IN_SECONDS, fastapi_route:
         def inner_wrapper_sync(*args, **kwargs):
             """Return cached value if one exists, otherwise evaluate the wrapped function and cache the result."""
 
-            func_kwargs = kwargs.copy()
             redis_cache = FastApiRedisCache()
             if redis_cache.not_connected:
                 # if the redis client is not connected or request is not cacheable, no caching behavior is performed.
